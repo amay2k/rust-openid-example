@@ -815,7 +815,7 @@ checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
 [[package]]
 name = "openid"
 version = "0.11.0"
-source = "git+https://github.com/amay2k/rust-openid?tag=v0.11.0-auth0#91fdf2f68f714bc3deb21586216027aef5174b87"
+source = "git+https://github.com/sre-university/auth0-openid.git?tag=v0.11.0-auth0#91fdf2f68f714bc3deb21586216027aef5174b87"
 dependencies = [
  "base64",
  "biscuit",
