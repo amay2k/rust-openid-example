@@ -2,6 +2,7 @@ use std::{convert::Infallible, env, sync::Arc};
 
 use log::{error, info};
 use openid::{Client, Discovered, DiscoveredClient, Options, StandardClaims, Token, Userinfo};
+use openid::error::Error;
 use openid_examples::{
     entity::{LoginQuery, Sessions, User},
     INDEX_HTML,
@@ -62,12 +63,20 @@ async fn main() -> anyhow::Result<()> {
         .and(with_sessions(sessions.clone()))
         .and_then(reply_login);
 
+    let logout = warp::path!("logout")
+        .and(warp::get())
+        .and(with_client(client.clone()))
+        .and(with_sessions(sessions.clone()))
+        .and_then(reply_logout);
+
+
     let api_account = warp::path!("api" / "account")
         .and(warp::get())
         .and(with_user(sessions))
         .map(|user: User| warp::reply::json(&user));
 
     let routes = index
+        .or(logout)
         .or(authorize)
         .or(login)
         .or(api_account)
@@ -188,6 +197,41 @@ async fn reply_authorize(oidc_client: Arc<OpenIDClient>) -> Result<impl warp::Re
     ))
 }
 
+async fn reply_logout(oidc_client: Arc<OpenIDClient>,
+                      _sessions: Arc<RwLock<Sessions>>,
+) -> Result<impl warp::Reply, Infallible> {
+    let origin_url = env::var("ORIGIN").unwrap_or_else(|_| host(""));
+
+    let c = oidc_client.config();
+    let mut logout_url = c.issuer.clone();
+    logout_url
+        .path_segments_mut()
+        .map_err(|_| Error::CannotBeABase).unwrap()
+        .extend(&["v2", "logout"]);
+
+    let _ = logout_url.query_pairs_mut()
+        .append_pair("client_id", &oidc_client.client_id)
+        .append_pair("returnTo", &origin_url);
+
+    println!("logout: {}", &logout_url);
+
+    let redirect_url: String = logout_url.into();
+
+    let authorization_cookie = ::cookie::Cookie::build(EXAMPLE_COOKIE, "")
+        .path("/")
+        .http_only(true)
+        .finish()
+        .to_string();
+
+    Ok(Response::builder()
+        .status(StatusCode::MOVED_PERMANENTLY)
+        .header(warp::http::header::CACHE_CONTROL, "no-cache")
+        .header(warp::http::header::LOCATION, redirect_url)
+        .header(warp::http::header::SET_COOKIE, authorization_cookie)
+        .body("")
+        .unwrap())
+}
+
 #[derive(Debug)]
 struct Unauthorized;
 
@@ -210,7 +254,7 @@ async fn extract_user(
 
 fn with_user(
     sessions: Arc<RwLock<Sessions>>,
-) -> impl Filter<Extract = (User,), Error = Rejection> + Clone {
+) -> impl Filter<Extract=(User, ), Error=Rejection> + Clone {
     warp::cookie::optional(EXAMPLE_COOKIE)
         .and(warp::any().map(move || sessions.clone()))
         .and_then(extract_user)
