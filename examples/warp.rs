@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let client_secret = env::var("CLIENT_SECRET").expect("<client secret> for your provider");
     let issuer_url =
         env::var("ISSUER").unwrap_or_else(|_| "https://accounts.google.com".to_string());
-    let redirect = Some(host("/login/oauth2/code/oidc"));
+    let redirect = Some(host("/callback"));
     let issuer = reqwest::Url::parse(&issuer_url)?;
 
     eprintln!("redirect: {:?}", redirect);
@@ -50,12 +50,12 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::get())
         .map(|| warp::reply::html(INDEX_HTML));
 
-    let authorize = warp::path!("oauth2" / "authorization" / "oidc")
+    let authorize = warp::path!("login")
         .and(warp::get())
         .and(with_client(client.clone()))
         .and_then(reply_authorize);
 
-    let login = warp::path!("login" / "oauth2" / "code" / "oidc")
+    let login = warp::path!("callback")
         .and(warp::get())
         .and(with_client(client.clone()))
         .and(warp::query::<LoginQuery>())
@@ -113,6 +113,8 @@ async fn reply_login(
 
             let login = user_info.preferred_username.clone();
             let email = user_info.email.clone();
+
+            println!("reply_login: {:?} {:?}", login, email);
 
             let user = User {
                 id: user_info.sub.clone().unwrap_or_default(),
@@ -175,7 +177,7 @@ async fn reply_authorize(oidc_client: Arc<OpenIDClient>) -> Result<impl warp::Re
         ..Default::default()
     });
 
-    info!("authorize: {}", auth_url);
+    println!("authorize: {}", auth_url);
 
     let url: String = auth_url.into();
 
